@@ -1,0 +1,348 @@
+🏗️ Folder Structure
+crm-frontend/
+ ┣ src/
+ ┃ ┣ components/
+ ┃ ┃ ┣ Sidebar.jsx
+ ┃ ┃ ┣ CustomerTable.jsx
+ ┃ ┃ ┗ CustomerFormModal.jsx
+ ┃ ┣ pages/
+ ┃ ┃ ┗ Customers.jsx
+ ┃ ┣ services/
+ ┃ ┃ ┗ customerService.js
+ ┃ ┣ App.jsx
+ ┃ ┗ main.jsx
+ ┣ index.html
+ ┗ package.json
+
+⚙️ 1️⃣ Install Requirements
+
+Run these once:
+
+npm create vite@latest crm-frontend --template react
+cd crm-frontend
+npm install axios react-hook-form yup @hookform/resolvers tailwindcss
+npx tailwindcss init -p
+
+
+Then update tailwind.config.js:
+
+/** @type {import('tailwindcss').Config} */
+export default {
+  content: ["./index.html", "./src/**/*.{js,jsx,ts,tsx}"],
+  theme: { extend: {} },
+  plugins: [],
+}
+
+
+And in src/index.css, add:
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+🧱 2️⃣ src/services/customerService.js
+
+Replace the URL with your real API base path.
+
+import axios from "axios";
+
+// ✅ Change this to match your Spring Boot API
+const API_URL = "http://localhost:8080/api/customers";
+
+export const getCustomers = () => axios.get(API_URL);
+export const createCustomer = (data) => axios.post(API_URL, data);
+export const updateCustomer = (id, data) => axios.put(`${API_URL}/${id}`, data);
+export const deleteCustomer = (id) => axios.delete(`${API_URL}/${id}`);
+
+🧱 3️⃣ src/components/Sidebar.jsx
+
+No external icons, just emojis.
+
+export default function Sidebar() {
+  const menuItems = [
+    { icon: "📊", label: "Dashboard" },
+    { icon: "👥", label: "Customers" },
+    { icon: "📋", label: "Leads" },
+    { icon: "🎯", label: "Campaigns" },
+    { icon: "💬", label: "Interactions" },
+    { icon: "🏷️", label: "Tags" },
+  ];
+
+  return (
+    <div className="w-64 h-screen bg-gray-50 border-r px-4 py-6 flex flex-col">
+      <h1 className="text-xl font-bold mb-6">CRM System</h1>
+      <nav className="space-y-2">
+        {menuItems.map((item) => (
+          <div
+            key={item.label}
+            className="flex items-center space-x-2 px-3 py-2 rounded-lg hover:bg-gray-200 cursor-pointer"
+          >
+            <span>{item.icon}</span>
+            <span>{item.label}</span>
+          </div>
+        ))}
+      </nav>
+      <footer className="mt-auto text-sm text-gray-500">© 2025 CRM System</footer>
+    </div>
+  );
+}
+
+🧱 4️⃣ src/components/CustomerTable.jsx
+
+Displays the customer list and buttons for Edit/Delete.
+
+import React from "react";
+
+export default function CustomerTable({ customers, onEdit, onDelete }) {
+  return (
+    <table className="w-full border-collapse text-sm">
+      <thead>
+        <tr className="bg-gray-100 text-left">
+          <th className="p-3">Name</th>
+          <th className="p-3">Email</th>
+          <th className="p-3">Phone</th>
+          <th className="p-3">Company</th>
+          <th className="p-3">Status</th>
+          <th className="p-3">Created</th>
+          <th className="p-3">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {customers.map((c) => (
+          <tr key={c.id} className="border-b hover:bg-gray-50">
+            <td className="p-3">{c.name}</td>
+            <td className="p-3">{c.email}</td>
+            <td className="p-3">{c.phone}</td>
+            <td className="p-3">{c.company}</td>
+            <td className="p-3">
+              <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs">
+                Active
+              </span>
+            </td>
+            <td className="p-3">{c.createdDate || "N/A"}</td>
+            <td className="p-3 space-x-2">
+              <button onClick={() => onEdit(c)} className="text-blue-600 hover:underline">
+                Edit
+              </button>
+              <button onClick={() => onDelete(c.id)} className="text-red-600 hover:underline">
+                Delete
+              </button>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+🧱 5️⃣ src/components/CustomerFormModal.jsx
+
+Used to add or edit a customer.
+
+import React from "react";
+import { useForm } from "react-hook-form";
+import { yupResolver } from "@hookform/resolvers/yup";
+import * as yup from "yup";
+
+const schema = yup.object({
+  name: yup.string().required("Name is required"),
+  email: yup.string().email("Invalid email").required("Email is required"),
+  phone: yup.string().matches(/^[0-9]{10}$/, "Must be 10 digits"),
+  company: yup.string().required("Company is required"),
+});
+
+export default function CustomerFormModal({ isOpen, onClose, onSubmit, initialData }) {
+  const { register, handleSubmit, formState: { errors } } = useForm({
+    resolver: yupResolver(schema),
+    defaultValues: initialData || {},
+  });
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center">
+      <div className="bg-white rounded-lg p-6 w-96 shadow-lg">
+        <h2 className="text-lg font-semibold mb-4">
+          {initialData ? "Edit Customer" : "Add Customer"}
+        </h2>
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-3">
+          <div>
+            <input {...register("name")} placeholder="Name" className="border w-full p-2 rounded" />
+            <p className="text-red-500 text-xs">{errors.name?.message}</p>
+          </div>
+          <div>
+            <input {...register("email")} placeholder="Email" className="border w-full p-2 rounded" />
+            <p className="text-red-500 text-xs">{errors.email?.message}</p>
+          </div>
+          <div>
+            <input {...register("phone")} placeholder="Phone" className="border w-full p-2 rounded" />
+            <p className="text-red-500 text-xs">{errors.phone?.message}</p>
+          </div>
+          <div>
+            <input {...register("company")} placeholder="Company" className="border w-full p-2 rounded" />
+            <p className="text-red-500 text-xs">{errors.company?.message}</p>
+          </div>
+          <div className="flex justify-end space-x-2 pt-3">
+            <button type="button" onClick={onClose} className="px-3 py-1 border rounded">
+              Cancel
+            </button>
+            <button type="submit" className="bg-blue-600 text-white px-4 py-1 rounded">
+              Save
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+🧱 6️⃣ src/pages/Customers.jsx
+
+Main customer management page.
+
+import React, { useEffect, useState } from "react";
+import {
+  getCustomers,
+  createCustomer,
+  updateCustomer,
+  deleteCustomer,
+} from "../services/customerService";
+import CustomerTable from "../components/CustomerTable";
+import CustomerFormModal from "../components/CustomerFormModal";
+
+export default function Customers() {
+  const [customers, setCustomers] = useState([]);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingCustomer, setEditingCustomer] = useState(null);
+
+  const fetchData = async () => {
+    const res = await getCustomers();
+    setCustomers(res.data);
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const handleSave = async (data) => {
+    if (editingCustomer) {
+      await updateCustomer(editingCustomer.id, data);
+    } else {
+      await createCustomer(data);
+    }
+    setModalOpen(false);
+    setEditingCustomer(null);
+    fetchData();
+  };
+
+  const handleDelete = async (id) => {
+    await deleteCustomer(id);
+    fetchData();
+  };
+
+  return (
+    <div className="p-6 flex flex-col flex-1">
+      <div className="flex justify-between items-center mb-4">
+        <div>
+          <h1 className="text-2xl font-bold">Customers</h1>
+          <p className="text-gray-500 text-sm">
+            Manage your customer relationships
+          </p>
+        </div>
+        <button
+          onClick={() => setModalOpen(true)}
+          className="bg-blue-600 text-white px-4 py-2 rounded"
+        >
+          + Add Customer
+        </button>
+      </div>
+
+      <div className="border rounded-lg p-4 bg-white shadow-sm">
+        <input
+          placeholder="Search customers..."
+          className="border p-2 rounded w-64 mb-3"
+        />
+        <CustomerTable
+          customers={customers}
+          onEdit={(c) => {
+            setEditingCustomer(c);
+            setModalOpen(true);
+          }}
+          onDelete={handleDelete}
+        />
+      </div>
+
+      <CustomerFormModal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onSubmit={handleSave}
+        initialData={editingCustomer}
+      />
+    </div>
+  );
+}
+
+🧱 7️⃣ src/App.jsx
+
+The root layout — sidebar + customers page.
+
+import Sidebar from "./components/Sidebar";
+import Customers from "./pages/Customers";
+
+export default function App() {
+  return (
+    <div className="flex h-screen bg-gray-100">
+      <Sidebar />
+      <Customers />
+    </div>
+  );
+}
+
+🧱 8️⃣ src/main.jsx
+import React from "react";
+import ReactDOM from "react-dom/client";
+import App from "./App";
+import "./index.css";
+
+ReactDOM.createRoot(document.getElementById("root")).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+
+🧩 9️⃣ (Optional) Fix CORS in Spring Boot
+
+In your CustomerController.java:
+
+@CrossOrigin(origins = "http://localhost:5173")
+@RestController
+@RequestMapping("/api/customers")
+public class CustomerController {
+    // endpoints
+}
+
+✅ Run the App
+
+Start your Spring Boot backend
+
+mvn spring-boot:run
+
+
+Start React frontend
+
+npm run dev
+
+
+Open http://localhost:5173
+
+You’ll get your full CRM-like customer management system with:
+
+Sidebar
+
+Customer table
+
+Add/Edit modal
+
+Form validation
+
+Full CRUD integration
