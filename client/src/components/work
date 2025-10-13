@@ -1,0 +1,802 @@
+import React, { useState, useEffect } from 'react';
+import { Search, Plus, Edit2, Trash2, X, User, Building, Mail, Phone, CreditCard, Tag } from 'lucide-react';
+
+const API_BASE_URL = 'http://localhost:8000/api';
+
+const customerService = {
+  getAll: async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/customers`);
+      if (!response.ok) throw new Error('Failed to fetch customers');
+      return response.json();
+    } catch (error) {
+      console.error(error);
+      throw error;
+    }
+  },
+  search: async (query) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/customers/search?q=${encodeURIComponent(query)}`);
+      if (!response.ok) throw new Error('Failed to search customers');
+      return response.json();
+    } catch (error) {
+      console.error(error);
+      throw error;
+    }
+  },
+  create: async (data) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/customers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error('Failed to create customer');
+      return response.json();
+    } catch (error) {
+      console.error(error);
+      throw error;
+    }
+  },
+  update: async (id, data) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/customers/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error('Failed to update customer');
+      return response.json();
+    } catch (error) {
+      console.error(error);
+      throw error;
+    }
+  },
+  delete: async (id) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/customers/${id}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) throw new Error('Failed to delete customer');
+      return response.json();
+    } catch (error) {
+      console.error(error);
+      throw error;
+    }
+  },
+  getAllTags: async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/tags`);
+      if (!response.ok) throw new Error('Failed to fetch tags');
+      const data = await response.json();
+      // If backend returns array of objects with 'name' property, extract names
+      // If it returns array of strings, use as is
+      return Array.isArray(data) ? (typeof data[0] === 'string' ? data : data.map(t => t.name || t)) : [];
+    } catch (error) {
+      console.error(error);
+      return [];
+    }
+  },
+};
+
+const Modal = ({ isOpen, onClose, title, children, size = 'md' }) => {
+  if (!isOpen) return null;
+  
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+      <div 
+        className={`bg-white rounded-lg shadow-xl ${size === 'lg' ? 'max-w-2xl' : 'max-w-md'} w-full max-h-[90vh] overflow-hidden flex flex-col`}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+          <h2 className="text-2xl font-semibold text-gray-800">{title}</h2>
+          <button 
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            <X size={24} />
+          </button>
+        </div>
+        <div className="overflow-y-auto p-6">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const CustomerForm = ({ customer, allTags = [], onSubmit, onCancel }) => {
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    company: '',
+    notes: '',
+    tags: [],
+    account: {
+      accountNumber: '',
+      accountType: 'SAVINGS',
+      balance: '0'
+    }
+  });
+  const [errors, setErrors] = useState({});
+  const [tagInput, setTagInput] = useState('');
+
+  useEffect(() => {
+    if (customer) {
+      setFormData({
+        name: customer.name || '',
+        email: customer.email || '',
+        phone: customer.phone || '',
+        company: customer.company || '',
+        notes: customer.notes || '',
+        tags: customer.tags ? Array.from(customer.tags) : [],
+        account: {
+          accountNumber: customer.account?.accountNumber || '',
+          accountType: customer.account?.accountType || 'SAVINGS',
+          balance: customer.account?.balance?.toString() || '0'
+        }
+      });
+    }
+  }, [customer]);
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    if (name.startsWith('account.')) {
+      const fieldName = name.split('.')[1];
+      setFormData(prev => ({
+        ...prev,
+        account: { ...prev.account, [fieldName]: value }
+      }));
+    } else {
+      setFormData(prev => ({ ...prev, [name]: value }));
+    }
+    if (errors[name]) {
+      setErrors(prev => ({ ...prev, [name]: '' }));
+    }
+  };
+
+  const handleAddTag = (e) => {
+    if (e.key === 'Enter' && tagInput.trim()) {
+      e.preventDefault();
+      const newTag = tagInput.trim();
+      if (!formData.tags.includes(newTag)) {
+        setFormData(prev => ({ ...prev, tags: [...prev.tags, newTag] }));
+      }
+      setTagInput('');
+    }
+  };
+
+  const handleRemoveTag = (tagToRemove) => {
+    setFormData(prev => ({
+      ...prev,
+      tags: prev.tags.filter(tag => tag !== tagToRemove)
+    }));
+  };
+
+  const handleSelectExistingTag = (tagName) => {
+    if (!formData.tags.includes(tagName)) {
+      setFormData(prev => ({ ...prev, tags: [...prev.tags, tagName] }));
+    }
+  };
+
+  const validateIndianPhone = (phone) => {
+    if (!phone) return true; // Phone is optional
+    // Indian phone: 10 digits, optionally starting with +91 or 91
+    const phoneRegex = /^(\+91|91)?[6-9]\d{9}$/;
+    return phoneRegex.test(phone.replace(/\s/g, ''));
+  };
+
+  const validateAccountNumber = (accNum) => {
+    // Indian bank account: typically 9-18 digits
+    return /^\d{9,18}$/.test(accNum);
+  };
+
+  const validate = () => {
+    const newErrors = {};
+    
+    // Customer validation
+    if (!formData.name.trim()) {
+      newErrors.name = 'Name is required';
+    } else if (formData.name.trim().length < 2) {
+      newErrors.name = 'Name must be at least 2 characters';
+    }
+    
+    if (!formData.email.trim()) {
+      newErrors.email = 'Email is required';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+      newErrors.email = 'Invalid email format';
+    }
+    
+    if (formData.phone && !validateIndianPhone(formData.phone)) {
+      newErrors.phone = 'Invalid Indian phone number (10 digits, starting with 6-9)';
+    }
+    
+    // Account validation
+    if (!formData.account.accountNumber.trim()) {
+      newErrors['account.accountNumber'] = 'Account number is required';
+    } else if (!validateAccountNumber(formData.account.accountNumber)) {
+      newErrors['account.accountNumber'] = 'Invalid account number (9-18 digits)';
+    }
+    
+    if (!formData.account.accountType) {
+      newErrors['account.accountType'] = 'Account type is required';
+    }
+    
+    const balance = parseFloat(formData.account.balance);
+    if (isNaN(balance)) {
+      newErrors['account.balance'] = 'Balance must be a valid number';
+    } else if (balance < 0) {
+      newErrors['account.balance'] = 'Balance cannot be negative';
+    }
+    
+    return newErrors;
+  };
+
+  const handleSubmit = () => {
+    const newErrors = validate();
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      return;
+    }
+    
+    const payload = {
+      name: formData.name,
+      email: formData.email,
+      phone: formData.phone,
+      company: formData.company,
+      notes: formData.notes,
+      tags: formData.tags,
+      account: {
+        accountNumber: formData.account.accountNumber,
+        accountType: formData.account.accountType,
+        balance: parseFloat(formData.account.balance)
+      }
+    };
+    
+    onSubmit(payload);
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Customer Details Section */}
+      <div>
+        <h3 className="text-lg font-semibold text-gray-700 mb-4 flex items-center gap-2">
+          <User size={20} />
+          Customer Details
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Name <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              name="name"
+              value={formData.name}
+              onChange={handleChange}
+              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                errors.name ? 'border-red-500' : 'border-gray-300'
+              }`}
+              placeholder="Enter full name"
+            />
+            {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Email <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="email"
+              name="email"
+              value={formData.email}
+              onChange={handleChange}
+              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                errors.email ? 'border-red-500' : 'border-gray-300'
+              }`}
+              placeholder="email@example.com"
+            />
+            {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email}</p>}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Phone
+            </label>
+            <input
+              type="tel"
+              name="phone"
+              value={formData.phone}
+              onChange={handleChange}
+              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                errors.phone ? 'border-red-500' : 'border-gray-300'
+              }`}
+              placeholder="9876543210"
+            />
+            {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone}</p>}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Company
+            </label>
+            <input
+              type="text"
+              name="company"
+              value={formData.company}
+              onChange={handleChange}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="Company name"
+            />
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Notes
+            </label>
+            <textarea
+              name="notes"
+              value={formData.notes}
+              onChange={handleChange}
+              rows={3}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="Additional notes..."
+            />
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Tags
+            </label>
+            <div className="space-y-2">
+              {/* Display selected tags */}
+              <div className="flex flex-wrap gap-2 min-h-[40px] p-2 border border-gray-300 rounded-lg">
+                {formData.tags.length > 0 ? (
+                  formData.tags.map((tag, index) => (
+                    <span
+                      key={index}
+                      className="inline-flex items-center gap-1 px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm"
+                    >
+                      {tag}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveTag(tag)}
+                        className="hover:text-blue-900"
+                      >
+                        <X size={14} />
+                      </button>
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-gray-400 text-sm">No tags added</span>
+                )}
+              </div>
+              
+              {/* Input for new tags */}
+              <input
+                type="text"
+                value={tagInput}
+                onChange={(e) => setTagInput(e.target.value)}
+                onKeyDown={handleAddTag}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Type a tag and press Enter..."
+              />
+              
+              {/* Existing tags suggestions */}
+              {allTags.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  <span className="text-xs text-gray-500">Suggestions:</span>
+                  {allTags.map((tag, index) => (
+                    <button
+                      key={index}
+                      type="button"
+                      onClick={() => handleSelectExistingTag(tag)}
+                      className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
+                      disabled={formData.tags.includes(tag)}
+                    >
+                      {tag}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Account Details Section */}
+      <div className="border-t pt-6">
+        <h3 className="text-lg font-semibold text-gray-700 mb-4 flex items-center gap-2">
+          <CreditCard size={20} />
+          Account Details
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Account Number <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              name="account.accountNumber"
+              value={formData.account.accountNumber}
+              onChange={handleChange}
+              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                errors['account.accountNumber'] ? 'border-red-500' : 'border-gray-300'
+              }`}
+              placeholder="9-18 digit account number"
+            />
+            {errors['account.accountNumber'] && (
+              <p className="text-red-500 text-xs mt-1">{errors['account.accountNumber']}</p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Account Type <span className="text-red-500">*</span>
+            </label>
+            <select
+              name="account.accountType"
+              value={formData.account.accountType}
+              onChange={handleChange}
+              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                errors['account.accountType'] ? 'border-red-500' : 'border-gray-300'
+              }`}
+            >
+              <option value="SAVINGS">Savings</option>
+              <option value="CURRENT">Current</option>
+              <option value="FIXED_DEPOSIT">Fixed Deposit</option>
+              <option value="RECURRING_DEPOSIT">Recurring Deposit</option>
+            </select>
+            {errors['account.accountType'] && (
+              <p className="text-red-500 text-xs mt-1">{errors['account.accountType']}</p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Balance (₹) <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="number"
+              name="account.balance"
+              value={formData.account.balance}
+              onChange={handleChange}
+              step="0.01"
+              min="0"
+              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                errors['account.balance'] ? 'border-red-500' : 'border-gray-300'
+              }`}
+              placeholder="0.00"
+            />
+            {errors['account.balance'] && (
+              <p className="text-red-500 text-xs mt-1">{errors['account.balance']}</p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Form Actions */}
+      <div className="flex justify-end gap-3 pt-4 border-t">
+        <button
+          onClick={onCancel}
+          className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={handleSubmit}
+          className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+        >
+          {customer ? 'Update Customer' : 'Create Customer'}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const CustomerPage = () => {
+  const [customers, setCustomers] = useState([]);
+  const [tags, setTags] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [modalState, setModalState] = useState({ isOpen: false, mode: null, customer: null });
+
+  useEffect(() => {
+    fetchCustomers();
+    fetchTags();
+  }, []);
+
+  useEffect(() => {
+    if (error || success) {
+      const timer = setTimeout(() => {
+        setError(null);
+        setSuccess(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [error, success]);
+
+  const fetchCustomers = async () => {
+    setLoading(true);
+    try {
+      const data = await customerService.getAll();
+      setCustomers(data);
+      setError(null);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchTags = async () => {
+    try {
+      const data = await customerService.getAllTags();
+      setTags(data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleSearch = async (term) => {
+    setSearchTerm(term);
+    if (!term.trim()) {
+      fetchCustomers();
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      const data = await customerService.search(term);
+      setCustomers(data);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openModal = (mode, customer = null) => setModalState({ isOpen: true, mode, customer });
+  const closeModal = () => setModalState({ isOpen: false, mode: null, customer: null });
+
+  const handleCreate = async (formData) => {
+    try {
+      await customerService.create(formData);
+      await fetchCustomers();
+      setSuccess('Customer created successfully!');
+      closeModal();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const handleUpdate = async (formData) => {
+    try {
+      await customerService.update(modalState.customer.id, formData);
+      await fetchCustomers();
+      setSuccess('Customer updated successfully!');
+      closeModal();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const handleDelete = async () => {
+    try {
+      await customerService.delete(modalState.customer.id);
+      await fetchCustomers();
+      setSuccess('Customer deleted successfully!');
+      closeModal();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-7xl mx-auto px-4 py-8">
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-4xl font-bold text-gray-900 mb-2">Customer Management</h1>
+          <p className="text-gray-600">Manage your customers and their accounts</p>
+        </div>
+
+        {/* Action Bar */}
+        <div className="bg-white rounded-lg shadow-sm p-4 mb-6 flex flex-col sm:flex-row gap-4 items-center justify-between">
+          <div className="relative flex-1 w-full sm:max-w-md">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+            <input
+              type="text"
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="Search by name, email, company, or ID..."
+              value={searchTerm}
+              onChange={(e) => handleSearch(e.target.value)}
+            />
+          </div>
+          <button
+            onClick={() => openModal('create')}
+            className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Plus size={20} />
+            Add Customer
+          </button>
+        </div>
+
+        {/* Alerts */}
+        {error && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
+            {error}
+          </div>
+        )}
+        {success && (
+          <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg text-green-700">
+            {success}
+          </div>
+        )}
+
+        {/* Table */}
+        {loading ? (
+          <div className="flex justify-center items-center py-12">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+          </div>
+        ) : (
+          <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Phone</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Company</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Account</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Balance</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tags</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {customers.length === 0 ? (
+                    <tr>
+                      <td colSpan="8" className="px-6 py-12 text-center text-gray-500">
+                        No customers found. Create your first customer to get started!
+                      </td>
+                    </tr>
+                  ) : (
+                    customers.map(customer => (
+                      <tr key={customer.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center">
+                            <div className="h-10 w-10 flex-shrink-0 bg-blue-100 rounded-full flex items-center justify-center">
+                              <User className="text-blue-600" size={20} />
+                            </div>
+                            <div className="ml-4">
+                              <div className="text-sm font-medium text-gray-900">{customer.name}</div>
+                              <div className="text-xs text-gray-500">ID: {customer.id}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center text-sm text-gray-900">
+                            <Mail className="mr-2 text-gray-400" size={16} />
+                            {customer.email}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {customer.phone ? (
+                            <div className="flex items-center">
+                              <Phone className="mr-2 text-gray-400" size={16} />
+                              {customer.phone}
+                            </div>
+                          ) : (
+                            <span className="text-gray-400">N/A</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {customer.company ? (
+                            <div className="flex items-center">
+                              <Building className="mr-2 text-gray-400" size={16} />
+                              {customer.company}
+                            </div>
+                          ) : (
+                            <span className="text-gray-400">N/A</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm text-gray-900">{customer.account?.accountNumber || 'N/A'}</div>
+                          <div className="text-xs text-gray-500">{customer.account?.accountType || ''}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                          {customer.account?.balance !== undefined ? `₹${customer.account.balance.toLocaleString('en-IN')}` : 'N/A'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex flex-wrap gap-1">
+                            {customer.tags && customer.tags.length > 0 ? (
+                              Array.from(customer.tags).map((tag, idx) => (
+                                <span key={idx} className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                  {tag}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-gray-400 text-sm">No tags</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                          <button
+                            onClick={() => openModal('edit', customer)}
+                            className="text-blue-600 hover:text-blue-900 mr-3 transition-colors"
+                            title="Edit"
+                          >
+                            <Edit2 size={18} />
+                          </button>
+                          <button
+                            onClick={() => openModal('delete', customer)}
+                            className="text-red-600 hover:text-red-900 transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Create/Edit Modal */}
+        <Modal
+          isOpen={modalState.isOpen && (modalState.mode === 'create' || modalState.mode === 'edit')}
+          onClose={closeModal}
+          title={modalState.mode === 'create' ? 'Add New Customer' : 'Edit Customer'}
+          size="lg"
+        >
+          <CustomerForm
+            customer={modalState.customer}
+            allTags={tags}
+            onSubmit={modalState.mode === 'create' ? handleCreate : handleUpdate}
+            onCancel={closeModal}
+          />
+        </Modal>
+
+        {/* Delete Confirmation Modal */}
+        <Modal
+          isOpen={modalState.isOpen && modalState.mode === 'delete'}
+          onClose={closeModal}
+          title="Delete Customer"
+        >
+          <div className="space-y-4">
+            <p className="text-gray-700">
+              Are you sure you want to delete <strong className="text-gray-900">{modalState.customer?.name}</strong>?
+              This action cannot be undone.
+            </p>
+            <div className="flex justify-end gap-3 pt-4">
+              <button
+                onClick={closeModal}
+                className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+              >
+                Delete Customer
+              </button>
+            </div>
+          </div>
+        </Modal>
+      </div>
+    </div>
+  );
+};
+
+export default function App() {
+  return <CustomerPage />;
+}
